@@ -2,6 +2,8 @@
 
 Powerful file, shell, and web tools for [OpenAI Agents SDK](https://github.com/openai/openai-agents-python).
 
+> **Note**: This project is migrated from [kimi-cli](https://github.com/anthropics/kimi-cli) tools using [Claude Code](https://claude.ai/claude-code). The original tools were designed for kimi-cli's internal framework, and this package adapts them to work seamlessly with OpenAI's Agents SDK.
+
 ## Features
 
 - **File Tools**: Read, write, edit files with glob patterns and grep search
@@ -156,6 +158,10 @@ from openai_agents_tools import (
     get_web_tools,      # Web tools
 )
 ```
+
+## Acknowledgments
+
+This project is based on the tools from [kimi-cli](https://github.com/anthropics/kimi-cli), a powerful CLI agent. The migration to OpenAI Agents SDK format was completed using [Claude Code](https://claude.ai/claude-code).
 
 ## License
 
