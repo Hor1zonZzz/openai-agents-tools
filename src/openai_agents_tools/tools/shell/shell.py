@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from agents import RunContextWrapper, function_tool
+from agents import RunContextWrapper, Tool
+from agents.tool import FunctionTool
 from pydantic import BaseModel, Field
 
 from ...context import KimiToolContext
@@ -57,6 +58,22 @@ class ShellInfo:
     def is_cmd(self) -> bool:
         return self.name == "cmd"
 
+    @property
+    def is_windows(self) -> bool:
+        return self.is_powershell or self.is_cmd
+
+    @property
+    def display_name(self) -> str:
+        """Get human-readable shell name for prompts."""
+        if self.is_powershell:
+            return "Windows PowerShell"
+        elif self.is_cmd:
+            return "Windows cmd"
+        elif self.name == "bash":
+            return "bash"
+        else:
+            return "sh"
+
     def get_args(self, command: str) -> tuple[str, ...]:
         """
         Get the shell arguments for executing a command.
@@ -90,7 +107,6 @@ def _detect_shell() -> ShellInfo:
 
     if system == "Windows":
         # Windows: prefer PowerShell, fall back to cmd
-        # Note: kimi-cli uses "powershell.exe" directly
         powershell = shutil.which("powershell")
         if powershell:
             return ShellInfo(name="powershell", path=powershell)
@@ -103,7 +119,6 @@ def _detect_shell() -> ShellInfo:
         return ShellInfo(name="cmd", path="cmd.exe")
     else:
         # Unix-like: prefer bash, fall back to sh
-        # Check common bash paths like kimi-cli does
         bash_paths = [
             Path("/bin/bash"),
             Path("/usr/bin/bash"),
@@ -127,36 +142,63 @@ def _detect_shell() -> ShellInfo:
         return ShellInfo(name="sh", path="/bin/sh")
 
 
-@function_tool
-async def shell(
-    ctx: RunContextWrapper[KimiToolContext], params: ShellParams
+def _load_description(shell_info: ShellInfo) -> str:
+    """
+    Load the tool description from a markdown file.
+
+    This mirrors kimi-cli's load_desc() function:
+    - Loads bash.md or powershell.md based on shell type
+    - Replaces ${SHELL} with the actual shell name and path
+
+    Args:
+        shell_info: The detected shell information.
+
+    Returns:
+        The tool description with variables replaced.
+    """
+    # Determine which description file to use
+    desc_file = "powershell.md" if shell_info.is_windows else "bash.md"
+
+    # Load the description file
+    desc_path = Path(__file__).parent / desc_file
+
+    try:
+        description = desc_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        # Fallback to a basic description if file not found
+        return (
+            f"Execute a {shell_info.display_name} command. "
+            "Use this tool to explore the filesystem, run scripts, etc."
+        )
+
+    # Replace template variables (like kimi-cli's Jinja2 replacement)
+    shell_display = f"{shell_info.display_name} (`{shell_info.path}`)"
+    description = description.replace("${SHELL}", shell_display)
+
+    return description
+
+
+# Detect shell at module load time
+_shell_info = _detect_shell()
+
+
+async def _shell_handler(
+    ctx: RunContextWrapper[KimiToolContext], args: str
 ) -> str:
     """
-    Execute a shell command.
+    The actual shell command handler.
 
-    Use this tool to explore the filesystem, run scripts, get system information, etc.
-
-    Output:
-    The stdout and stderr will be combined and returned. The output may be truncated
-    if it is too long. If the command failed, the exit code will be provided.
-
-    Guidelines for safety:
-    - Each shell tool call executes in a fresh shell environment
-    - Shell variables and current working directory are not preserved between calls
-    - Set `timeout` to a reasonable value for possibly long-running commands
-    - Avoid using `..` to access files outside the working directory
-    - Avoid modifying files outside the working directory unless explicitly instructed
-    - Never run commands requiring superuser privileges unless explicitly instructed
-
-    Guidelines for efficiency:
-    - Use `&&` to chain related commands: `cd /path && ls -la`
-    - Use `;` to run commands sequentially regardless of success/failure
-    - Use `||` for conditional execution (run second only if first fails)
-    - Use pipes (`|`) and redirections (`>`, `>>`) to chain commands
-    - Always quote file paths containing spaces with double quotes
-
-    This tool requires approval before execution.
+    This is called by the FunctionTool when the tool is invoked.
     """
+    import json
+
+    # Parse arguments
+    try:
+        params_dict = json.loads(args)
+        params = ShellParams.model_validate(params_dict)
+    except Exception as e:
+        return format_error(f"Invalid parameters: {e}")
+
     if not params.command:
         return format_error("Command cannot be empty.")
 
@@ -170,13 +212,11 @@ async def shell(
     if not approved:
         return format_rejection()
 
-    # Detect shell and get execution arguments
-    shell_info = _detect_shell()
-    shell_args = shell_info.get_args(params.command)
+    # Get shell arguments
+    shell_args = _shell_info.get_args(params.command)
 
     try:
         # Create subprocess with explicit arguments (like kimi-cli's kaos.exec)
-        # This ensures correct behavior for PowerShell (-Command) vs bash (-c)
         process = await asyncio.create_subprocess_exec(
             *shell_args,
             stdout=asyncio.subprocess.PIPE,
@@ -218,3 +258,40 @@ async def shell(
 
     except Exception as e:
         return format_error(f"Failed to execute command. Error: {e}")
+
+
+def create_shell_tool() -> Tool:
+    """
+    Create the shell tool with dynamically loaded description.
+
+    This mirrors kimi-cli's approach of loading description from
+    bash.md or powershell.md based on the detected shell.
+
+    Returns:
+        A FunctionTool configured for the current platform's shell.
+    """
+    description = _load_description(_shell_info)
+
+    # Generate JSON schema from Pydantic model
+    params_schema = ShellParams.model_json_schema()
+
+    return FunctionTool(
+        name="shell",
+        description=description,
+        params_json_schema=params_schema,
+        on_invoke_tool=_shell_handler,
+    )
+
+
+# Create the shell tool instance
+# This is what gets exported and used
+shell = create_shell_tool()
+
+
+def get_shell_info() -> ShellInfo:
+    """
+    Get information about the detected shell.
+
+    Useful for debugging or conditional logic based on shell type.
+    """
+    return _shell_info
