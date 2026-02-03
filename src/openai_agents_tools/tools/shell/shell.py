@@ -9,6 +9,9 @@ from __future__ import annotations
 import asyncio
 import platform
 import shutil
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
 
 from agents import RunContextWrapper, function_tool
 from pydantic import BaseModel, Field
@@ -39,27 +42,89 @@ class ShellParams(BaseModel):
     )
 
 
-def _get_default_shell() -> str:
+@dataclass(frozen=True)
+class ShellInfo:
+    """Information about the detected shell."""
+
+    name: Literal["bash", "sh", "powershell", "cmd"]
+    path: str
+
+    @property
+    def is_powershell(self) -> bool:
+        return self.name == "powershell"
+
+    @property
+    def is_cmd(self) -> bool:
+        return self.name == "cmd"
+
+    def get_args(self, command: str) -> tuple[str, ...]:
+        """
+        Get the shell arguments for executing a command.
+
+        This mirrors kimi-cli's _shell_args method:
+        - PowerShell: (shell_path, "-Command", command)
+        - cmd: (shell_path, "/c", command)
+        - bash/sh: (shell_path, "-c", command)
+        """
+        if self.is_powershell:
+            return (self.path, "-Command", command)
+        elif self.is_cmd:
+            return (self.path, "/c", command)
+        else:
+            # bash or sh
+            return (self.path, "-c", command)
+
+
+def _detect_shell() -> ShellInfo:
     """
-    Get the default shell path for the current platform.
+    Detect the default shell for the current platform.
+
+    This mirrors kimi-cli's Environment.detect() logic:
+    - Windows: PowerShell (preferred) or cmd
+    - Unix: bash (preferred) or sh
 
     Returns:
-        Path to the default shell executable.
+        ShellInfo with name and path.
     """
     system = platform.system()
 
     if system == "Windows":
-        # Try PowerShell first, fall back to cmd
+        # Windows: prefer PowerShell, fall back to cmd
+        # Note: kimi-cli uses "powershell.exe" directly
         powershell = shutil.which("powershell")
         if powershell:
-            return powershell
+            return ShellInfo(name="powershell", path=powershell)
+
         cmd = shutil.which("cmd")
         if cmd:
-            return cmd
-        return "cmd"
+            return ShellInfo(name="cmd", path=cmd)
+
+        # Fallback to cmd.exe
+        return ShellInfo(name="cmd", path="cmd.exe")
     else:
-        # Unix-like systems
-        return shutil.which("bash") or shutil.which("sh") or "/bin/sh"
+        # Unix-like: prefer bash, fall back to sh
+        # Check common bash paths like kimi-cli does
+        bash_paths = [
+            Path("/bin/bash"),
+            Path("/usr/bin/bash"),
+            Path("/usr/local/bin/bash"),
+        ]
+
+        for bash_path in bash_paths:
+            if bash_path.is_file():
+                return ShellInfo(name="bash", path=str(bash_path))
+
+        # Try shutil.which as fallback
+        bash = shutil.which("bash")
+        if bash:
+            return ShellInfo(name="bash", path=bash)
+
+        # Fall back to sh
+        sh = shutil.which("sh")
+        if sh:
+            return ShellInfo(name="sh", path=sh)
+
+        return ShellInfo(name="sh", path="/bin/sh")
 
 
 @function_tool
@@ -105,18 +170,18 @@ async def shell(
     if not approved:
         return format_rejection()
 
-    # Get shell path
-    shell_path = _get_default_shell()
+    # Detect shell and get execution arguments
+    shell_info = _detect_shell()
+    shell_args = shell_info.get_args(params.command)
 
     try:
-        # Create subprocess
-        process = await asyncio.create_subprocess_shell(
-            params.command,
+        # Create subprocess with explicit arguments (like kimi-cli's kaos.exec)
+        # This ensures correct behavior for PowerShell (-Command) vs bash (-c)
+        process = await asyncio.create_subprocess_exec(
+            *shell_args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=str(ctx.context.work_dir),
-            shell=True,
-            executable=shell_path if platform.system() != "Windows" else None,
         )
 
         try:
