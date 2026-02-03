@@ -39,12 +39,12 @@ class ShellParams(BaseModel):
     )
 
 
-def _get_default_shell() -> tuple[str, list[str]]:
+def _get_default_shell() -> str:
     """
-    Get the default shell for the current platform.
+    Get the default shell path for the current platform.
 
     Returns:
-        Tuple of (shell_path, shell_args_prefix)
+        Path to the default shell executable.
     """
     system = platform.system()
 
@@ -52,15 +52,14 @@ def _get_default_shell() -> tuple[str, list[str]]:
         # Try PowerShell first, fall back to cmd
         powershell = shutil.which("powershell")
         if powershell:
-            return powershell, ["-command"]
+            return powershell
         cmd = shutil.which("cmd")
         if cmd:
-            return cmd, ["/c"]
-        return "cmd", ["/c"]
+            return cmd
+        return "cmd"
     else:
         # Unix-like systems
-        shell = shutil.which("bash") or shutil.which("sh") or "/bin/sh"
-        return shell, ["-c"]
+        return shutil.which("bash") or shutil.which("sh") or "/bin/sh"
 
 
 @function_tool
@@ -107,7 +106,7 @@ async def shell(
         return format_rejection()
 
     # Get shell path
-    shell_path, shell_args = _get_default_shell()
+    shell_path = _get_default_shell()
 
     try:
         # Create subprocess

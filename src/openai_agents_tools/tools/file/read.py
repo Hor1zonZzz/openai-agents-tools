@@ -22,6 +22,32 @@ if TYPE_CHECKING:
 MAX_LINES = 1000
 MAX_LINE_LENGTH = 2000
 MAX_BYTES = 100 << 10  # 100KB
+SNIFF_BYTES = 32  # Bytes to read for file type detection
+
+# Magic bytes for common binary/media files
+BINARY_SIGNATURES = [
+    b"\x89PNG",  # PNG
+    b"\xff\xd8\xff",  # JPEG
+    b"GIF87a",  # GIF
+    b"GIF89a",  # GIF
+    b"RIFF",  # WEBP, AVI, WAV
+    b"PK\x03\x04",  # ZIP, DOCX, XLSX, etc.
+    b"PK\x05\x06",  # ZIP empty
+    b"%PDF",  # PDF
+    b"\x7fELF",  # ELF executable
+    b"MZ",  # Windows executable
+    b"\x00\x00\x00\x1c\x66\x74\x79\x70",  # MP4
+    b"\x00\x00\x00\x20\x66\x74\x79\x70",  # MP4
+]
+
+
+def _is_binary_file(header: bytes) -> bool:
+    """Check if a file appears to be binary based on magic bytes."""
+    for sig in BINARY_SIGNATURES:
+        if header.startswith(sig):
+            return True
+    # Also check for null bytes in the header (common in binary files)
+    return b"\x00" in header
 
 
 class ReadFileParams(BaseModel):
@@ -123,6 +149,19 @@ async def read_file(
         return format_error(f"`{params.path}` does not exist.")
     if not p.is_file():
         return format_error(f"`{params.path}` is not a file.")
+
+    # Check file type
+    try:
+        with open(p, "rb") as f:
+            header = f.read(SNIFF_BYTES)
+        if _is_binary_file(header):
+            return format_error(
+                f"`{params.path}` appears to be a binary file. "
+                "Use read_media_file for images/videos, or appropriate shell commands "
+                "for other binary formats."
+            )
+    except Exception:
+        pass  # Continue anyway if we can't read the header
 
     try:
         # Read file content

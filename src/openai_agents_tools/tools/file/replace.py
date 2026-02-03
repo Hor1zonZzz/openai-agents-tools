@@ -153,20 +153,11 @@ async def str_replace_file(
             return format_rejection()
 
         # Write the modified content back
-        p.write_text(content)
-
-        # Count changes for success message
-        total_replacements = 0
-        for edit in edits:
-            if edit.replace_all:
-                total_replacements += original_content.count(edit.old)
-            else:
-                total_replacements += 1 if edit.old in original_content else 0
+        p.write_text(content, encoding="utf-8")
 
         return format_success(
             "",
-            f"File successfully edited. "
-            f"Applied {len(edits)} edit(s) with {total_replacements} total replacement(s).",
+            f"File successfully edited. Applied {len(edits)} edit(s).",
         )
 
     except Exception as e:

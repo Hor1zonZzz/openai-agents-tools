@@ -128,7 +128,7 @@ async def write_file(
     try:
         # Write content
         if params.mode == "overwrite":
-            p.write_text(params.content)
+            p.write_text(params.content, encoding="utf-8")
         else:  # append
             with open(p, "a", encoding="utf-8") as f:
                 f.write(params.content)

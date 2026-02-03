@@ -88,15 +88,6 @@ async def glob_tool(
     else:
         dir_path = work_dir
 
-    # Validate directory is within work_dir
-    try:
-        dir_path.resolve().relative_to(work_dir.resolve())
-    except ValueError:
-        return format_error(
-            f"`{dir_path}` is outside the working directory. "
-            "You can only search within the working directory."
-        )
-
     # Check directory exists
     if not dir_path.exists():
         return format_error(f"`{params.directory}` does not exist.")
