@@ -1,0 +1,69 @@
+[project]
+name = "openai-agents-tools"
+version = "0.1.0"
+description = "Powerful file, shell, and web tools for OpenAI Agents SDK"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12"
+authors = [
+    { name = "Hor1zonZzz" }
+]
+keywords = ["openai", "agents", "tools", "file", "shell", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "openai-agents>=0.0.3",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+web = [
+    "aiohttp>=3.9.0",
+    "trafilatura>=1.6.0",
+]
+grep = [
+    "ripgrepy>=2.0.0",
+]
+media = [
+    "pillow>=10.0.0",
+]
+all = [
+    "openai-agents-tools[web,grep,media]",
+]
+
+[project.urls]
+Homepage = "https://github.com/Hor1zonZzz/openai-agents-tools"
+Repository = "https://github.com/Hor1zonZzz/openai-agents-tools"
+Issues = "https://github.com/Hor1zonZzz/openai-agents-tools/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/openai_agents_tools"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle
+    "F",   # Pyflakes
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "I",   # isort
+]
+
+[tool.pyright]
+typeCheckingMode = "standard"
+pythonVersion = "3.12"
