@@ -1,7 +1,7 @@
 """
 shell - Execute shell commands.
 
-This tool executes shell commands and requires approval before execution.
+This tool executes shell commands directly without any approval or authentication.
 """
 
 from __future__ import annotations
@@ -17,10 +17,8 @@ from agents import RunContextWrapper, Tool
 from agents.tool import FunctionTool
 from pydantic import BaseModel, Field
 
-from ...context import KimiToolContext
 from ...errors import (
     format_error,
-    format_rejection,
     format_success,
     truncate_output,
 )
@@ -183,12 +181,13 @@ _shell_info = _detect_shell()
 
 
 async def _shell_handler(
-    ctx: RunContextWrapper[KimiToolContext], args: str
+    ctx: RunContextWrapper, args: str
 ) -> str:
     """
     The actual shell command handler.
 
     This is called by the FunctionTool when the tool is invoked.
+    Executes commands directly without any approval or authentication.
     """
     import json
 
@@ -202,26 +201,17 @@ async def _shell_handler(
     if not params.command:
         return format_error("Command cannot be empty.")
 
-    # Request approval
-    approved = await ctx.context.request_approval(
-        tool_name="shell",
-        action="run command",
-        description=f"Run command `{params.command}`",
-    )
-
-    if not approved:
-        return format_rejection()
-
     # Get shell arguments
     shell_args = _shell_info.get_args(params.command)
 
     try:
         # Create subprocess with explicit arguments (like kimi-cli's kaos.exec)
+        # Use current working directory
         process = await asyncio.create_subprocess_exec(
             *shell_args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
-            cwd=str(ctx.context.work_dir),
+            cwd=str(Path.cwd()),
         )
 
         try:
